@@ -1,0 +1,29 @@
+[
+  {
+    "id": 101,
+    "name": "Sardorov Sardor",
+    "debts": "10mln uzs",
+    "phone":"+998900123456",
+    "status": "active",
+    "lat": 40.4,
+    "lon": 71.78
+  },
+  {
+    "id": 102,
+    "name": "Nodirbekova Gulbahor",
+    "debts": "17mln uzs",
+    "phone":"+998900123457",
+    "status": "notActive",
+    "lat": 40.45,
+    "lon": 71.75
+  },
+  {
+    "id": 103,
+    "name": "Sardorov Nodirbek",
+    "phone":"+998900123458",
+    "status": "active",
+    "debts": "15mln uzs",
+    "lat": 40.42,
+    "lon": 71.79
+  }
+]

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <title>Real-time foydalanuvchi kuzatuv</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <style>
+    #map {
+      height: 600px;
+    }
+    #finish-btn {
+      margin: 10px;
+      padding: 10px 20px;
+      background-color: crimson;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h2 style="text-align: center">📍 Foydalanuvchi real-time harakati</h2>
+  <button id="finish-btn">🚩 Ishni tugatish</button>
+  <div id="map"></div>
+
+  <script>
+    const map = L.map("map").setView([40.4, 71.76], 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    let isRunning = true;
+    let lastPosition = null;
+    let totalDistance = 0;
+    let stopStartTime = null;
+    let stops = [];
+    const polyline = L.polyline([], { color: "blue", weight: 4 }).addTo(map);
+    let marker = null;
+
+    function deg2rad(deg) {
+      return deg * (Math.PI / 180);
+    }
+
+    function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = deg2rad(lat2 - lat1);
+      const dLon = deg2rad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(deg2rad(lat1)) *
+        Math.cos(deg2rad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    function formatTime(date) {
+      return date.toTimeString().split(" ")[0];
+    }
+
+    function updateLocation() {
+      if (!isRunning) return;
+
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const latlng = [lat, lon];
+
+        // masofa hisoblash
+        if (lastPosition) {
+          const dist = getDistanceFromLatLonInKm(
+            lastPosition[0], lastPosition[1], lat, lon
+          );
+
+          if (dist < 0.005) { // 5 metr
+            if (!stopStartTime) stopStartTime = new Date();
+            else {
+              const now = new Date();
+              const diffSec = Math.floor((now - stopStartTime) / 1000);
+              if (diffSec >= 10) {
+                stops.push({ lat, lon, time: formatTime(now) });
+                L.marker([lat, lon])
+                  .addTo(map)
+                  .bindPopup(`🛑 To'xtash<br>🕒 ${formatTime(now)}`);
+                stopStartTime = null;
+              }
+            }
+          } else {
+            stopStartTime = null;
+            totalDistance += dist;
+          }
+        }
+
+        lastPosition = latlng;
+        polyline.addLatLng(latlng);
+
+        if (marker) marker.setLatLng(latlng);
+        else marker = L.marker(latlng).addTo(map);
+
+        map.setView(latlng);
+      });
+    }
+
+    const interval = setInterval(updateLocation, 5000);
+
+    document.getElementById("finish-btn").addEventListener("click", () => {
+      isRunning = false;
+      clearInterval(interval);
+
+      const summary =
+        `✅ Harakat tugadi<br>` +
+        `📏 Umumiy masofa: ${totalDistance.toFixed(2)} km<br>` +
+        `⛔ To'xtashlar soni: ${stops.length}<br>` +
+        stops.map((s, i) => `#${i + 1}: ${s.time}`).join("<br>");
+
+      L.popup()
+        .setLatLng(lastPosition)
+        .setContent(summary)
+        .openOn(map);
+    });
+  </script>
+</body>
+</html>
