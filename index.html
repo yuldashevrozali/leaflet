@@ -2,50 +2,47 @@
 <html lang="uz">
 <head>
   <meta charset="UTF-8" />
-  <title>Real-time yurish - Foydalanuvchi</title>
+  <title>Real-time foydalanuvchi kuzatuv</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <style>
-    #map { height: 90vh; }
-    button {
+    #map {
+      height: 600px;
+    }
+    #finish-btn {
       margin: 10px;
       padding: 10px 20px;
-      font-size: 16px;
+      background-color: crimson;
+      color: white;
+      border: none;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <h2 style="text-align:center">📍 Foydalanuvchi yurish xaritasi</h2>
-  <button id="stop-btn">🚩 Ishni tugatish</button>
+  <h2 style="text-align: center">📍 Foydalanuvchi real-time harakati</h2>
+  <button id="finish-btn">🚩 Ishni tugatish</button>
   <div id="map"></div>
 
   <script>
     const map = L.map("map").setView([40.4, 71.76], 13);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
+      attribution: "&copy; OpenStreetMap contributors"
     }).addTo(map);
 
-    const user = {
-      track: [],
-      polyline: null,
-      lastLat: null,
-      lastLon: null,
-      totalDistance: 0,
-      startTime: new Date(),
-      lastMoveTime: new Date(),
-      color: 'blue',
-      currentMarker: null,
-      stopCount: 0
-    };
-
-    let watchId;
-    let tracking = true;
+    let isRunning = true;
+    let lastPosition = null;
+    let totalDistance = 0;
+    let stopStartTime = null;
+    let stops = [];
+    const polyline = L.polyline([], { color: "blue", weight: 4 }).addTo(map);
+    let marker = null;
 
     function deg2rad(deg) {
       return deg * (Math.PI / 180);
     }
 
-    function getDistanceKm(lat1, lon1, lat2, lon2) {
+    function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
       const R = 6371;
       const dLat = deg2rad(lat2 - lat1);
       const dLon = deg2rad(lon2 - lon1);
@@ -53,8 +50,7 @@
         Math.sin(dLat / 2) * Math.sin(dLat / 2) +
         Math.cos(deg2rad(lat1)) *
         Math.cos(deg2rad(lat2)) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       return R * c;
     }
@@ -63,91 +59,66 @@
       return date.toTimeString().split(" ")[0];
     }
 
-    function addLocation(lat, lon) {
-      const now = new Date();
-      const isFirst = user.track.length === 0;
+    function updateLocation() {
+      if (!isRunning) return;
 
-      // Masofa
-      let dist = 0;
-      if (!isFirst) {
-        dist = getDistanceKm(user.lastLat, user.lastLon, lat, lon);
-        if (dist > 0.01) { // harakat bo‘lsa
-          user.lastMoveTime = now;
-        }
-      }
+      navigator.geolocation.getCurrentPosition((pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const latlng = [lat, lon];
 
-      user.totalDistance += dist;
-      user.lastLat = lat;
-      user.lastLon = lon;
-      user.track.push([lat, lon]);
-
-      // Polyline
-      if (!user.polyline) {
-        user.polyline = L.polyline(user.track, { color: user.color }).addTo(map);
-        L.marker([lat, lon]).addTo(map).bindPopup(`🚀 Boshlanish nuqtasi<br>🕒 ${formatTime(now)}`);
-      } else {
-        user.polyline.setLatLngs(user.track);
-      }
-
-      // Harakat markeri
-      if (user.currentMarker) map.removeLayer(user.currentMarker);
-      user.currentMarker = L.circleMarker([lat, lon], {
-        radius: 8,
-        color: user.color,
-        fillColor: user.color,
-        fillOpacity: 1
-      }).addTo(map);
-
-      // Agar 10 sekunddan ko‘p harakatsiz bo‘lsa => to‘xtash deb belgilansin
-      const diffSec = (now - user.lastMoveTime) / 1000;
-      if (diffSec >= 10 && dist < 0.005) {
-        user.stopCount++;
-        const totalSec = Math.floor((now - user.startTime) / 1000);
-        const distanceKm = user.totalDistance.toFixed(2);
-        L.marker([lat, lon])
-          .addTo(map)
-          .bindPopup(
-            `🛑 To‘xtash nuqtasi #${user.stopCount}<br>` +
-            `🕒 ${formatTime(now)}<br>` +
-            `🕓 Yurilgan vaqt: ${totalSec} soniya<br>` +
-            `📏 Masofa: ${distanceKm} km`
+        // masofa hisoblash
+        if (lastPosition) {
+          const dist = getDistanceFromLatLonInKm(
+            lastPosition[0], lastPosition[1], lat, lon
           );
-        user.lastMoveTime = now;
-      }
+
+          if (dist < 0.005) { // 5 metr
+            if (!stopStartTime) stopStartTime = new Date();
+            else {
+              const now = new Date();
+              const diffSec = Math.floor((now - stopStartTime) / 1000);
+              if (diffSec >= 10) {
+                stops.push({ lat, lon, time: formatTime(now) });
+                L.marker([lat, lon])
+                  .addTo(map)
+                  .bindPopup(`🛑 To'xtash<br>🕒 ${formatTime(now)}`);
+                stopStartTime = null;
+              }
+            }
+          } else {
+            stopStartTime = null;
+            totalDistance += dist;
+          }
+        }
+
+        lastPosition = latlng;
+        polyline.addLatLng(latlng);
+
+        if (marker) marker.setLatLng(latlng);
+        else marker = L.marker(latlng).addTo(map);
+
+        map.setView(latlng);
+      });
     }
 
-    // Geolocationni boshlash
-    function startTracking() {
-      if (!navigator.geolocation) {
-        alert("Geolocation qo‘llab-quvvatlanmaydi!");
-        return;
-      }
+    const interval = setInterval(updateLocation, 5000);
 
-      watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          if (!tracking) return;
-          const { latitude, longitude } = pos.coords;
-          addLocation(latitude, longitude);
-        },
-        (err) => {
-          alert("Xatolik: " + err.message);
-        },
-        { enableHighAccuracy: true }
-      );
-    }
+    document.getElementById("finish-btn").addEventListener("click", () => {
+      isRunning = false;
+      clearInterval(interval);
 
-    document.getElementById("stop-btn").addEventListener("click", () => {
-      tracking = false;
-      navigator.geolocation.clearWatch(watchId);
-      const now = new Date();
-      const totalSec = Math.floor((now - user.startTime) / 1000);
-      const distanceKm = user.totalDistance.toFixed(2);
-      alert(
-        `✅ Harakat tugadi:\n🕓 Vaqt: ${totalSec} soniya\n📏 Masofa: ${distanceKm} km\n🛑 To‘xtashlar: ${user.stopCount} ta`
-      );
+      const summary =
+        `✅ Harakat tugadi<br>` +
+        `📏 Umumiy masofa: ${totalDistance.toFixed(2)} km<br>` +
+        `⛔ To'xtashlar soni: ${stops.length}<br>` +
+        stops.map((s, i) => `#${i + 1}: ${s.time}`).join("<br>");
+
+      L.popup()
+        .setLatLng(lastPosition)
+        .setContent(summary)
+        .openOn(map);
     });
-
-    startTracking();
   </script>
 </body>
 </html>
